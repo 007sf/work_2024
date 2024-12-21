@@ -313,7 +313,7 @@ if __name__ == "__main__":
     dqn = DQN(env, save_path_tensorboard, "dqn.pth", main_net, target_net, replaybuffer, device=torch.device("cuda"), iterations=300)
 
     # 训练
-    # dqn.train()
+    dqn.train()
 
     # 显示策略矩阵
     policy_matrix = dqn.display_policy_matrix()

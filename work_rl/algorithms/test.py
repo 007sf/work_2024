@@ -14,7 +14,7 @@ if __name__ == "__main__":
     state = env.reset()
     for t in range(1000):
         env.render()
-        action = np.random.randint(5)
+        action = np.random.randint(6)
 
         next_state, reward, done, info = env.step(action)
         # state = copy.deepcopy(next_state)

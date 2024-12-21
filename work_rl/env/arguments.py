@@ -53,6 +53,7 @@ action_map = {0:(0,1),
               2:(0,-1),
               3:(-1,0),
               4:(0,0),
+              5:"mark"
               }
 parser.add_argument("--action-space", type=list, default=list(action_map.keys()) )  # down, right, up, left, stay,做标记
 parser.add_argument("--debug", type=bool, default=False)

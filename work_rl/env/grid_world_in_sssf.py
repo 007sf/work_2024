@@ -23,6 +23,7 @@ class GridWorld():
                       2: (0, -1),
                       3: (-1, 0),
                       4: (0, 0),
+                      5:"mark"
                       }
         self.action_map = action_map
         self.env_size = env_size
@@ -57,7 +58,7 @@ class GridWorld():
     def reset(self):
         self.agent_state = copy.deepcopy(self.start_state)
         self.traj = [self.agent_state["position"]]
-        # self.agent_state["marks_pos"] = []
+        self.agent_state["marks_pos"] = []
         # self.scatter = [self.agent_state["marks_pos"]]
         self.scatter = copy.deepcopy(self.start_state["marks_pos"])
         return self.agent_state
@@ -65,8 +66,6 @@ class GridWorld():
     def step(self, action):
 
         assert action in self.action_space, "Invalid action"
-        # if self._is_done(self.agent_state):
-        #     action = 4
 
         next_state, reward = self._get_next_state_and_reward(self.agent_state, action)
         next_state = copy.deepcopy(next_state)
@@ -80,7 +79,7 @@ class GridWorld():
         if action!=5:
 
             action=self.action_map[action]
-            state_store = tuple(np.array((x_store, y_store)) + 0.2 * np.array(action))
+            state_store = tuple(np.array((x_store, y_store)) + 0.2 * np.array(action))  #--------------------------------------------------------
             state_store_2 = (next_state["position"][0], next_state["position"][1])
             self.agent_state = next_state
 
@@ -123,8 +122,9 @@ class GridWorld():
         r_num = used_sensor/self.start_state["marks_left"]
         r_time=-30/600
         sum = r_loc+r_num+r_time
-        # return 2*(r_loc/sum)+0.05*(r_num/sum)+0.05*(r_time/sum)
-        return 10
+        # return 20*(r_loc/sum)+0.05*(r_num/sum)+0.05*(r_time/sum)
+        return 2
+
     def _get_next_state_and_reward(self, state, action):
         x, y = state["position"]
         marks_left = state["marks_left"]
@@ -172,12 +172,12 @@ class GridWorld():
                 reward = self.reward_forbidden
             elif new_state["position"] == self.target_state["position"]:  # stay
                 x,y = new_state["position"]
-                # if new_state["marks_left"] == 0:
-                #
-                #     reward = self.reward_target
-                # else:
-                #     reward = -self.reward_target*3
-                reward = self.reward_target
+                if new_state["marks_left"] == 0:
+
+                    reward = self.reward_target
+                else:
+                    reward = -self.reward_target*3
+
             elif new_state["position"] in self.forbidden_states["position"]:  # stay
                 x,y  = map(int,state["position"])
                 # new_state["position"] = (x,y)
@@ -216,8 +216,8 @@ class GridWorld():
         return p_pi
 
     def _is_done(self, state):
-        # return state["position"] == self.target_state["position"] and state["marks_left"]==0
-        return state["position"] == self.target_state["position"]
+        return state["position"] == self.target_state["position"] and state["marks_left"]==0
+
 
     def render(self, animation_interval=args.animation_interval):
         if self.canvas is None:
