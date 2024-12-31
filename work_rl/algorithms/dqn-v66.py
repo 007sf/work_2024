@@ -17,7 +17,7 @@ import seaborn as sns
 
 
 class MyNet(nn.Module):
-    def __init__(self, device, output_dim=5, n_max_points=10, ):
+    def __init__(self, device, output_dim=8, n_max_points=10, ):
         """
         初始化网络
         :param output_dim: 动作空间的维度
@@ -66,8 +66,9 @@ class MyNet(nn.Module):
             #     marks_pos[i, :len(pos_list),:] = torch.tensor(pos_list[:len(pos_list)],dtype=torch.float32)
         marks_pos_flat = marks_pos.view(batch_size, -1)
         state_tensor = torch.cat((positions, marks_left, marks_pos_flat), dim=1)
+        state_tensor_3_dim = torch.cat((positions, marks_left), dim=1)
         # 修改一下
-        # return state_tensor
+        # return state_tensor_3_dim
         return positions
 
     def forward(self, states):
@@ -221,7 +222,6 @@ class DQN():
         test_net.eval()
 
         for i in range(self.env.num_states):
-            # 环境中没有 get_state_from_index函数，重写获取state的代码
 
             state = self.env.get_state_from_index(i)
             # 上一步获取坐标，网络需要传入字典
@@ -234,15 +234,61 @@ class DQN():
 
             action = torch.argmax(q_values).item()
             policy_matrix[i, action] = 1
-
+        print(policy_matrix)
         return policy_matrix
 
+    #路径追踪
+    def display_policy_matrix2(self):
+        """
+        显示从初始状态到目标状态的策略路径
+        """
+        test_net = self.main_net
+        policy_matrix = np.zeros((self.env.num_states, len(self.env.action_space)))
+        test_net.load_state_dict(torch.load(self.save_model_path))
+        test_net.eval()
+
+        # 从初始状态开始追踪路径
+        current_state = self.env.start_state
+        path = []
+        count = 0
+        while True:
+            # 将当前状态转为字典格式
+            state = {
+                "position": current_state["position"],
+                "marks_left": current_state["marks_left"],
+                "marks_pos": current_state["marks_pos"]
+            }
+
+            # 获取当前状态的最佳动作
+            with torch.no_grad():
+                q_values = test_net(state).unsqueeze(0)
+                action = torch.argmax(q_values).item()
+
+            # 将状态和动作记录到路径中
+            path.append((current_state, action))
+            policy_matrix[self.env.get_index_from_state(current_state), action] = 1
+
+            # 执行动作，获取下一个状态
+            next_state, _, done, _ = self.env.step(action)
+            print("marks_left:{}".format(next_state["marks_left"]))
+
+            if done:  # 到达目标状态停止
+                break
+
+            count +=1
+            if count >100:
+                break
+
+            current_state = next_state
+
+        # 将策略矩阵返回，只用于从路径上显示策略
+        return policy_matrix, path
     def plot_state(self):
 
         states_counts = Counter(tuple(map(tuple, self.state_distribution)))
         heatmap = np.zeros((self.env.env_size[0], self.env.env_size[0]))
         for (x, y), count in states_counts.items():
-            heatmap[x, y] = count
+            heatmap[y, x] = count
 
         plt.figure(figsize=(8, 6))
         sns.heatmap(heatmap, cmap='viridis', annot=True, cbar=True)
@@ -269,18 +315,29 @@ if __name__ == "__main__":
     save_path_tensorboard = os.path.join("logs", datetime.now().strftime("%Y%m%d-%H%M%S"))
     # 创建 DQN
     dqn = DQN(env, save_path_tensorboard, "dqn.pth", main_net, target_net, replaybuffer, device=torch.device("cuda"),
-              iterations=4000)
+              iterations=8000)
 
     # 收集多组数据
     for _ in range(10):
         dqn.collect_data()
 
-    # 训练
+
+
     dqn.train()
 
-    # 显示策略矩阵
-    policy_matrix = dqn.display_policy_matrix()
+
+
+    #常规显示
+    # policy_matrix = dqn.display_policy_matrix()
+    # env.reset()
+    # env.render()
+    # env.add_policy(policy_matrix)
+
+    # 显示轨迹策略矩阵
     env.reset()
+    policy_matrix,path = dqn.display_policy_matrix2()
     env.render()
-    env.add_policy(policy_matrix)
-    env.render(animation_interval=100)
+    env.add_policy2(policy_matrix,path)
+
+
+    env.render(animation_interval=1000)

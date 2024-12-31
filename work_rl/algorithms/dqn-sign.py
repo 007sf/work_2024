@@ -15,7 +15,7 @@ from work_rl.env.grid_world_in_sssf import GridWorld
 import torch.nn.functional as F
 import seaborn as sns
 class MyNet(nn.Module):
-    def __init__(self, device,output_dim=5, n_max_points=10,):
+    def __init__(self, device,output_dim=8, n_max_points=10,):
         """
         初始化网络
         :param output_dim: 动作空间的维度
@@ -24,7 +24,8 @@ class MyNet(nn.Module):
         """
         super().__init__()
         # 定义全连接层
-        # self.fc1 = nn.Linear(3+2*n_max_points, 128)#修改一下
+        # self.fc1 = nn.Linear(3+2*n_max_points, 128)
+        #修改传入维度
         self.fc1 = nn.Linear(2, 128)
         self.fc2 = nn.Linear(128, 64)
         self.fc3 = nn.Linear(64, output_dim)
@@ -109,7 +110,7 @@ class ReplayBuffer():
 class DQN():
 
     def __init__(self, env, save_path, save_model_path, main_net, target_net, replaybuffer, device, iterations,
-                 gamma=0.95, batch_size=256, lr=0.01):
+                 gamma=0.995, batch_size=64, lr=0.0001):
         """
         初始化 DQN 类
         :param env: 强化学习环境实例
@@ -143,11 +144,29 @@ class DQN():
 
 
     def select_action(self,state,epsilon = 0.1):
-        if random.random() < epsilon:
-            action = random.choice(self.env.action_space)
+
+        if state["marks_left"] == 0:
+            # 从可用的动作中排除动作 5
+            available_actions = [action for action in self.env.action_space if self.env.action_map[action][1] == 0]
         else:
+            # 否则，所有动作都是可选的
+            available_actions = self.env.action_space
+
+            # 以 epsilon 的概率随机选择动作
+        if random.random() < epsilon:
+            action = random.choice(available_actions)
+        else:
+            # 否则，选择 Q 值最大的动作
             with torch.no_grad():
-                action = torch.argmax(self.main_net(state)).item()
+                q_values = self.main_net(state)
+                q_values = q_values.squeeze()  # 去除维度为 1 的维度
+                if state["marks_left"] == 0:
+                    # 将标记相关的动作 (do_mark == 1) 的 Q 值设置为 -inf
+                    for action in self.env.action_space:
+                        if self.env.action_map[action][1] == 1:  # 如果该动作是标记动作
+                            q_values[action] = float('-inf')
+                action = torch.argmax(q_values).item()
+
         return action
 
     # 收集数据
@@ -164,23 +183,18 @@ class DQN():
                 state = next_state
 
                 if done:
-                    self.replaybuffer.add(state, 4, reward, next_state, done)
                     break
 
 
     def collect_data_step(self,state,epsilon=0.1):
-        if np.random.rand()< epsilon:
-            action = np.random.choice(self.env.action_space)
-        else:
-            with torch.no_grad():
-                action = torch.argmax(self.main_net(state)).item()
+        action = self.select_action(state)
         next_state, reward, done, _ = self.env.step(action)
         self.replaybuffer.add(state, action, reward, next_state, done)
 
         # 记录当前状态
         self.state_distribution.append(state["position"])
 
-        return next_state,done
+        return next_state,done,reward
 
 
     def update_network(self):
@@ -211,13 +225,13 @@ class DQN():
         train_steps = 0
         for i in range(self.iterations):
             state =self.env.reset()
-            T=200
+            T=500
+            total_reward = 0
             for t in range(T):
 
-                next_state,done = self.collect_data_step(state)
-                # if done:
-                #
-                #     self.replaybuffer.add(next_state, 4, self.env.reward_target, next_state, done)
+                next_state,done,reward = self.collect_data_step(state)
+                total_reward+=reward
+
                 #     # 记录当前状态
                 #     self.state_distribution.append(next_state["position"])
 
@@ -233,12 +247,15 @@ class DQN():
                     if train_steps % 5000 == 0:
                         print("第{}轮损失,走了{}步长，训练步数：{}，函数大小:{}".format(i,t,train_steps, loss))
 
-                    if train_steps % 10==0:
+                    if train_steps % 100==0:
                         self.target_net.load_state_dict(self.main_net.state_dict())
 
                 state =next_state
                 if done:
                     break
+
+            # 记录总奖励
+            self.writer.add_scalar("Total Reward", total_reward, i)
 
         # 绘图
 
@@ -247,6 +264,8 @@ class DQN():
         self.writer.close()
         torch.save(self.main_net.state_dict(), self.save_model_path)
 
+
+    #以下均为可视化函数
     def display_policy_matrix(self):
         """
         显示策略矩阵
@@ -271,8 +290,8 @@ class DQN():
             action = torch.argmax(q_values).item()
 
             #强行修改终止状态的策略
-            if state["position"] == self.env.target_state["position"]:
-                action = 4
+            # if state["position"] == self.env.target_state["position"]:
+            #     action = 4
 
             policy_matrix[i, action] = 1
 
@@ -284,7 +303,7 @@ class DQN():
         states_counts= Counter(tuple(map(tuple,self.state_distribution)))
         heatmap = np.zeros((self.env.env_size[0],self.env.env_size[0]))
         for (x,y),count in states_counts.items():
-            heatmap[x,y] = count
+            heatmap[y,x] = count
 
         plt.figure(figsize=(8,6))
         sns.heatmap(heatmap, cmap='viridis', annot=True, cbar=True)
@@ -293,6 +312,51 @@ class DQN():
         plt.ylabel("State Dimension 2 (Discrete)")
         plt.show()
 
+    def display_policy_matrix2(self):
+        """
+        显示从初始状态到目标状态的策略路径
+        """
+        test_net = self.main_net
+        policy_matrix = np.zeros((self.env.num_states, len(self.env.action_space)))
+        test_net.load_state_dict(torch.load(self.save_model_path))
+        test_net.eval()
+
+        # 从初始状态开始追踪路径
+        current_state = self.env.start_state
+        path = []
+        count = 0
+        while True:
+            # 将当前状态转为字典格式
+            state = {
+                "position": current_state["position"],
+                "marks_left": current_state["marks_left"],
+                "marks_pos": current_state["marks_pos"]
+            }
+
+            # 获取当前状态的最佳动作
+            with torch.no_grad():
+                q_values = test_net(state).unsqueeze(0)
+                action = torch.argmax(q_values).item()
+
+            # 将状态和动作记录到路径中
+            path.append((current_state, action))
+            policy_matrix[self.env.get_index_from_state(current_state), action] = 1
+
+            # 执行动作，获取下一个状态
+            next_state, _, done, _ = self.env.step(action)
+            print("marks_left:{}".format(next_state["marks_left"]))
+
+            if done:  # 到达目标状态停止
+                break
+
+            count +=1
+            if count >100:
+                break
+
+            current_state = next_state
+
+        # 将策略矩阵返回，只用于从路径上显示策略
+        return policy_matrix, path
 
 if __name__ == "__main__":
 
@@ -306,18 +370,27 @@ if __name__ == "__main__":
     target_net = copy.deepcopy(main_net)
 
     # 创建经验回放缓冲区
-    replaybuffer = ReplayBuffer(1000)
+    replaybuffer = ReplayBuffer(100000)
 
     save_path_tensorboard = os.path.join("logs", datetime.now().strftime("%Y%m%d-%H%M%S"))
     # 创建 DQN
-    dqn = DQN(env, save_path_tensorboard, "dqn.pth", main_net, target_net, replaybuffer, device=torch.device("cuda"), iterations=300)
+    dqn = DQN(env, save_path_tensorboard, "dqn.pth", main_net, target_net, replaybuffer, device=torch.device("cuda"), iterations=500)
 
     # 训练
     dqn.train()
 
-    # 显示策略矩阵
-    policy_matrix = dqn.display_policy_matrix()
+    # 显示实时策略矩阵
     env.reset()
+    policy_matrix, path = dqn.display_policy_matrix2()
     env.render()
-    env.add_policy(policy_matrix)
+    env.add_policy2(policy_matrix, path)
+
+
+    # 显示策略矩阵
+    # policy_matrix = dqn.display_policy_matrix()
+    # env.reset()
+    # env.render()
+    # env.add_policy(policy_matrix)
+
+
     env.render(animation_interval=100)

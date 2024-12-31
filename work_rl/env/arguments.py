@@ -14,7 +14,7 @@ parser.add_argument("--env-size", type=Union[list, tuple, np.ndarray], default=(
 
 # specify the start state
 parser.add_argument("--start-state", type=dict, default={
-    "position":(0,6),
+    "position":(0,0),
     "marks_left":10,
     "marks_pos":[]
 })
@@ -31,10 +31,10 @@ parser.add_argument("--forbid"
                     "den-states", type=str, default='{"position": [[3,2],[3,3],[3,4],[2,5],[1,6],[5,5],[6,5],[4,3]]}')
 #-------------------------------------------------------------------------------------------------------------------
 # sepcify the reward when reaching target
-parser.add_argument("--reward-target", type=float, default =400)
+parser.add_argument("--reward-target", type=float, default =20)
 
 # sepcify the reward when entering into forbidden area
-parser.add_argument("--reward-forbidden", type=float, default = -50)
+parser.add_argument("--reward-forbidden", type=float, default = -1)
 
 # sepcify the reward for each step
 parser.add_argument("--reward-step", type=float, default = -1)
@@ -48,12 +48,15 @@ parser.add_argument("--reward_invalid_mark",type=float,default=-50)
 
 
 ## ==================== Advanced Settings ====================
-action_map = {0:(0,1),
-              1:(1,0),
-              2:(0,-1),
-              3:(-1,0),
-              4:(0,0),
-              5:"mark"
+action_map = {0:((0,1),0),
+              1:((1,0),0),
+              2:((0,-1),0),
+              3:((-1,0),0),
+
+              4:((0,1),1),
+              5:((1,0),1),
+              6:((0,-1),1),
+              7:((-1,0),1),
               }
 parser.add_argument("--action-space", type=list, default=list(action_map.keys()) )  # down, right, up, left, stay,做标记
 parser.add_argument("--debug", type=bool, default=False)
